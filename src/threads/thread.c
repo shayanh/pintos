@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -11,6 +12,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/mydevice.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -463,6 +465,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  list_init(&t->sch_devices);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -492,8 +495,32 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    // return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    int64_t mn = LONG_MAX;
+
+    struct list_elem *res_elem = list_begin(&ready_list);
+    struct list_elem *e;
+    for (e = list_begin(&ready_list); e != list_end(&ready_list);
+         e = list_next(e)) {
+           struct thread *t = list_entry(e, struct thread, elem);
+           if (list_empty(&t->sch_devices)) {
+             continue;
+           }
+
+           struct list_elem *dev_elem = list_begin(&t->sch_devices);
+           struct scheduled_device *sch_dev = list_entry(dev_elem, struct scheduled_device, elem);
+           int64_t cur = mydevice_get_queue_time(sch_dev->device_id);
+           if (cur < mn) {
+             mn = cur; 
+             res_elem = e; 
+           } 
+    }
+
+    struct thread *res = list_entry(res_elem, struct thread, elem);
+    list_remove(res_elem);
+    return res;
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -582,3 +609,16 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+bool cmp_ticks (const struct list_elem *a,
+		const struct list_elem *b,
+		void *aux UNUSED)
+{
+  struct thread *ta = list_entry(a, struct thread, elem);
+  struct thread *tb = list_entry(b, struct thread, elem);
+  if (ta->ticks < tb->ticks)
+    {
+      return true;
+    }
+  return false;
+}
