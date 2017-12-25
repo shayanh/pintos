@@ -17,9 +17,13 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+static void extract_command_name(char * cmd_string, char *command_name);
+static void extract_command_args(char * cmd_string, char* argv[], int *argc);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -38,10 +42,22 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  // make another copy of file name, which will be saved as a property in the process structure
+  char *cmd_name = malloc (strlen(fn_copy)+1);
+  if (cmd_name == NULL)
+    return TID_ERROR;
+  extract_command_name(fn_copy, cmd_name);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  if (tid == TID_ERROR){
+    palloc_free_page (fn_copy);
+    free(cmd_name);
+    return -1;
+  }
+  // update thread with userprog properties
+  struct thread *t = thread_get(tid);
+  t->prog_name = cmd_name;
+
   return tid;
 }
 
@@ -88,7 +104,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  for (;;);
 }
 
 /* Free the current process's resources. */
@@ -96,6 +112,11 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  // return if it's kernel thread
+  if (thread_tid() == 1) {
+    return ;
+  }
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -114,6 +135,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  
+  printf("exit: process %s\n", cur->prog_name);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -195,7 +218,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char **argv, int argc);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -215,6 +238,16 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  /*
+    extract command line
+   */
+  // create a copy of file_name and operate on it (modifying it)
+  char file_name_copy[CMD_LENGTH_MAX];
+  strlcpy(file_name_copy, file_name, CMD_LENGTH_MAX);
+  char *argv[CMD_ARGS_MAX];
+  int argc;
+  extract_command_args(file_name_copy, argv, &argc);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -222,10 +255,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", argv[0]);
       goto done; 
     }
 
@@ -302,7 +335,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argv, argc))
     goto done;
 
   /* Start address. */
@@ -312,7 +345,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (success) {
+    file_deny_write(file);
+  } else {
+    file_close (file);
+  }
   return success;
 }
 
@@ -427,7 +464,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char **argv, int argc) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -436,10 +473,34 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
+      if (success) {
         *esp = PHYS_BASE;
-      else
+        int i = argc;
+        // this array holds reference to differences arguments in the stack
+        uint32_t * arr[argc];
+        while(--i >= 0)
+        {
+          *esp = *esp - (strlen(argv[i])+1)*sizeof(char);
+          arr[i] = (uint32_t *)*esp;
+          memcpy(*esp,argv[i],strlen(argv[i])+1);
+        }
+        *esp = *esp - 4;
+        (*(int *)(*esp)) = 0;//sentinel
+        i = argc;
+        while( --i >= 0)
+        {
+          *esp = *esp - 4;//32bit
+          (*(uint32_t **)(*esp)) = arr[i];
+        }
+        *esp = *esp - 4;
+        (*(uintptr_t  **)(*esp)) = (*esp+4);
+        *esp = *esp - 4;
+        *(int *)(*esp) = argc;
+        *esp = *esp - 4;
+        (*(int *)(*esp))=0;
+      } else {
         palloc_free_page (kpage);
+      }
     }
   return success;
 }
@@ -462,4 +523,25 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+static void
+extract_command_name(char * cmd_string, char *command_name)
+{
+  char *save_ptr;
+  strlcpy (command_name, cmd_string, PGSIZE);
+  command_name = strtok_r(command_name, " ", &save_ptr);
+}
+
+static void
+extract_command_args(char * cmd_string, char* argv[], int *argc)
+{
+  char *save_ptr;
+  argv[0] = strtok_r(cmd_string, " ", &save_ptr);
+  char *token;
+  *argc = 1;
+  while((token = strtok_r(NULL, " ", &save_ptr))!=NULL)
+  {
+    argv[(*argc)++] = token;
+  }
 }

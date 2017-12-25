@@ -182,3 +182,15 @@ inumber (int fd)
 {
   return syscall1 (SYS_INUMBER, fd);
 }
+
+int
+sch_io(int device_id)
+{
+  return syscall1 (SYS_SCH_IO, device_id);
+}
+
+int
+do_io(int device_id, int ticks)
+{
+  return syscall2 (SYS_DO_IO, device_id, ticks);
+}

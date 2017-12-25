@@ -108,6 +108,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    char *prog_name;
 #endif
 
     /* Owned by thread.c. */
@@ -154,5 +155,7 @@ int thread_get_load_avg (void);
 bool cmp_ticks (const struct list_elem *a,
 		const struct list_elem *b,
 		void *aux UNUSED);
+
+struct thread *thread_get(tid_t tid);
 
 #endif /* threads/thread.h */
