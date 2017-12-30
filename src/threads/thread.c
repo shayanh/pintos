@@ -509,7 +509,7 @@ next_thread_to_run (void)
            }
 
            struct list_elem *dev_elem = list_begin(&t->sch_devices);
-           struct scheduled_device *sch_dev = list_entry(dev_elem, struct scheduled_device, elem);
+           struct sch_device_elem *sch_dev = list_entry(dev_elem, struct sch_device_elem, elem);
            int64_t cur = mydevice_get_queue_time(sch_dev->device_id);
            if (cur < mn) {
              mn = cur; 

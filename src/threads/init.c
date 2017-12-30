@@ -15,6 +15,7 @@
 #include "devices/timer.h"
 #include "devices/vga.h"
 #include "devices/rtc.h"
+#include "devices/mydevice.h"
 #include "threads/interrupt.h"
 #include "threads/io.h"
 #include "threads/loader.h"
@@ -77,6 +78,7 @@ int
 main (void)
 {
   char **argv;
+  int i;
 
   /* Clear BSS. */  
   bss_init ();
@@ -110,6 +112,8 @@ main (void)
   timer_init ();
   kbd_init ();
   input_init ();
+  for (i = 0; i < MAX_DEVICES; i++)
+    mydevice_init(i);
 #ifdef USERPROG
   exception_init ();
   syscall_init ();

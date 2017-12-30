@@ -15,7 +15,7 @@ enum thread_status
   };
 
 /* Scheduled device */
-struct scheduled_device {
+struct sch_device_elem {
   struct list_elem elem;
   int device_id;
 };

@@ -6,6 +6,8 @@
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "userprog/process.h"
+#include "devices/mydevice.h"
+#include "threads/malloc.h"
 
 typedef int pid_t;
 static int (*syscall_handlers[20]) (struct intr_frame *); /* Array of syscall functions */
@@ -67,14 +69,44 @@ static void
 syscall_sch_io(int device_id) {
   printf("sch_io syscall");
   printf(" device_id = %d\n", device_id);
-  // TODO
+  
+  enum intr_level old_level;
+  struct sch_device_elem *sch_dev;
+ 
+  old_level = intr_disable();
+ 
+  sch_dev = malloc(sizeof *sch_dev);
+  sch_dev->device_id = device_id;
+  list_push_back(&thread_current()->sch_devices, &sch_dev->elem);
+
+  intr_set_level(old_level);
 }
 
 static void
 syscall_do_io(int device_id, int ticks) {
-  printf("do_io syscall");
-  printf(" device_id = %d, ticks = %d\n", device_id, ticks);
-  // TODO
+	printf("do_io syscall");
+	printf(" device_id = %d, ticks = %d\n", device_id, ticks);
+	
+	struct thread *cur;
+	struct list_elem *e;
+	enum intr_level old_level;
+
+	cur = thread_current();
+
+	old_level = intr_disable();
+
+	for (e = list_begin(&cur->sch_devices); e != list_end(&cur->sch_devices);
+		 e = list_next(e)) {
+		struct sch_device_elem *sch_dev = list_entry(e, struct sch_device_elem, elem);
+		if (sch_dev->device_id == device_id) {
+			list_remove(e);
+			break;
+		}
+	}
+
+	intr_set_level(old_level);
+
+	mydevice_do_io(device_id, ticks);
 }
 
 static int
