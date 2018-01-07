@@ -590,6 +590,10 @@ schedule (void)
   if (cur != next)
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
+
+  /* for debugging */
+  /*if (next != idle_thread)*/
+	  /*printf("next = %s\n", next->name);*/
 }
 
 /* Returns a tid to use for a new thread. */
@@ -643,3 +647,48 @@ thread_get(tid_t tid)
   intr_set_level (old_level);
   return dest_thread;
 }
+
+void
+thread_sch_io(int device_id) {
+	printf("thread_sch_io");
+	printf(" device_id = %d\n", device_id);
+
+	enum intr_level old_level;
+	struct sch_device_elem *sch_dev;
+
+	old_level = intr_disable();
+
+	sch_dev = malloc(sizeof *sch_dev);
+	sch_dev->device_id = device_id;
+	list_push_back(&thread_current()->sch_devices, &sch_dev->elem);
+
+	intr_set_level(old_level);
+}
+
+void
+thread_do_io(int device_id, int ticks) {
+	printf("thread do_io");
+	printf(" device_id = %d, ticks = %d\n", device_id, ticks);
+
+	struct thread *cur;
+	struct list_elem *e;
+	enum intr_level old_level;
+
+	cur = thread_current();
+
+	old_level = intr_disable();
+
+	for (e = list_begin(&cur->sch_devices); e != list_end(&cur->sch_devices);
+			e = list_next(e)) {
+		struct sch_device_elem *sch_dev = list_entry(e, struct sch_device_elem, elem);
+		if (sch_dev->device_id == device_id) {
+			list_remove(e);
+			break;
+		}
+	}
+
+	intr_set_level(old_level);
+
+	mydevice_do_io(device_id, ticks);
+}
+

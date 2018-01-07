@@ -6,11 +6,12 @@
 struct mydevice devices[MAX_DEVICES];
 
 void mydevice_init(int id) {
-    if (id >= MAX_DEVICES) {
+    if (id < 0 || id >= MAX_DEVICES) {
         return ;
     }
     lock_init(&devices[id].lock);
     lock_init(&devices[id].protection);
+	devices[id].queue_time = 0;
 }
 
 void mydevice_do_io(int id, int64_t ticks) {
@@ -33,5 +34,8 @@ void mydevice_do_io(int id, int64_t ticks) {
 }
 
 int64_t mydevice_get_queue_time(int id) {
+    if (id < 0 || id >= MAX_DEVICES) {
+        return ;
+    }
     return devices[id].queue_time;
 }

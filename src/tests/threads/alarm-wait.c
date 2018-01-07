@@ -11,6 +11,7 @@
 #include "devices/timer.h"
 
 static void test_sleep (int thread_cnt, int iterations);
+static void my_test (void);
 
 void
 test_alarm_single (void) 
@@ -23,7 +24,13 @@ test_alarm_multiple (void)
 {
   test_sleep (5, 7);
 }
-
+
+void
+test_scheduler (void)
+{
+	my_test();
+}
+
 /* Information about the test. */
 struct sleep_test 
   {
@@ -149,4 +156,87 @@ sleeper (void *t_)
       *test->output_pos++ = t->id;
       lock_release (&test->output_lock);
     }
+}
+
+/* my tests */
+
+struct my_thread {
+	int device_id;
+	int thread_id;
+};
+
+static void test_prog(void*);
+static void cpu_bound(void*);
+static void io_bound(void*);
+
+static void
+my_test(void) {
+	int i;
+	char name[16];
+
+	msg("my_test");
+
+	for (i = 0; i < 2; i++) {
+		struct my_thread *t = malloc(sizeof *t);
+		t->thread_id = i;
+
+		snprintf (name, sizeof name, "thread %d", i);
+		thread_create (name, PRI_DEFAULT, cpu_bound, t);
+	}
+
+	for (i = 2; i < 4; i++) {
+		struct my_thread *t = malloc(sizeof *t);
+		t->device_id = i - 2;
+		t->thread_id = i;
+
+		snprintf (name, sizeof name, "thread %d", i);
+		thread_create (name, PRI_DEFAULT, io_bound, t);
+	}
+
+	timer_sleep(2000); /* wait long enough for all threads to finish */
+}
+
+static void
+cpu_bound(void *t_) {
+	struct my_thread *t = t_;
+
+	printf("begin now = %lld, thread_id = %d\n", timer_ticks(), t->thread_id);
+
+	timer_mdelay(1500); /* busy wait */
+
+	printf("end now = %lld, thread_id = %d\n", timer_ticks(), t->thread_id);
+}
+
+static void
+io_bound(void *t_) {
+	struct my_thread *t = t_;
+
+	printf("begin now = %lld, thread_id = %d, device_id = %d\n", \
+			timer_ticks(), t->thread_id, t->device_id);
+
+	thread_sch_io(t->device_id);
+	timer_sleep(10);
+
+	timer_mdelay(1500); /* busy wait */
+
+	thread_do_io(t->device_id, 600);
+
+	printf("end now = %lld, thread_id = %d, device_id = %d\n", \
+			timer_ticks(), t->thread_id, t->device_id);
+}
+
+static void
+test_prog(void *t_) {
+	struct my_thread *t = t_;
+
+	printf("begin now = %lld, thread_id = %d, device_id = %d\n", \
+			timer_ticks(), t->thread_id, t->device_id);
+
+	thread_sch_io(t->device_id);
+	timer_sleep(20);
+	timer_mdelay(100);
+	thread_do_io(t->device_id, 100);
+
+	printf("end now = %lld, thread_id = %d, device_id = %d\n", \
+			timer_ticks(), t->thread_id, t->device_id);
 }

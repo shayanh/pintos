@@ -151,11 +151,15 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* my functions */
+/* My functions */
 bool cmp_ticks (const struct list_elem *a,
 		const struct list_elem *b,
 		void *aux UNUSED);
 
 struct thread *thread_get(tid_t tid);
+
+/* Just for test */
+void thread_sch_io(int device_id);
+void thread_do_io(int device_id, int ticks);
 
 #endif /* threads/thread.h */
